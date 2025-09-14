@@ -1,0 +1,59 @@
+name: Auto Merge names.txt PR
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install GitHub CLI
+        run: sudo apt-get install -y gh jq
+
+      - name: Check changed files
+        id: check_files
+        run: |
+          CHANGED_FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only)
+          echo "Changed files: $CHANGED_FILES"
+          
+          if [[ "$CHANGED_FILES" != "names.txt" ]]; then
+            echo "not_valid=true" >> $GITHUB_ENV
+            exit 0
+          fi
+
+      - name: Count added lines
+        if: env.not_valid != 'true'
+        id: check_lines
+        run: |
+          ADDED_LINES=$(gh pr diff ${{ github.event.pull_request.number }} --diff | grep '^+' | grep -v '^+++' | wc -l)
+          REMOVED_LINES=$(gh pr diff ${{ github.event.pull_request.number }} --diff | grep '^-' | grep -v '^---' | wc -l)
+
+          echo "Added lines: $ADDED_LINES"
+          echo "Removed lines: $REMOVED_LINES"
+
+          if [[ "$ADDED_LINES" -eq 1 && "$REMOVED_LINES" -eq 0 ]]; then
+            echo "valid_change=true" >> $GITHUB_ENV
+          else
+            echo "valid_change=false" >> $GITHUB_ENV
+          fi
+
+      - name: Comment on PR
+        if: env.valid_change == 'true'
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body "✅ Auto-merged: This pull request only added **one new line** in \`names.txt\` and no other files were modified."
+
+      - name: Auto merge PR
+        if: env.valid_change == 'true'
+        run: |
+          gh pr merge ${{ github.event.pull_request.number }} --squash --admin --delete-branch
