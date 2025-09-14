@@ -46,6 +46,10 @@ jobs:
           else
             echo "valid_change=false" >> $GITHUB_ENV
           fi
+      - name: Add label
+        if: env.valid_change == 'true'
+        run: |
+          gh pr edit ${{ github.event.pull_request.number }} --add-label "auto-merged"
 
       - name: Comment on PR
         if: env.valid_change == 'true'
